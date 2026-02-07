@@ -6,5 +6,3 @@ __pycache__/
 .vscode/
 .vercelignore
 *.pyc
-flan_t5_sql/
-csv_files/
