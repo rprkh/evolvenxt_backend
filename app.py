@@ -9,6 +9,8 @@ import json
 from pydantic import BaseModel
 import re
 from helpers import ds1, ds2
+from typing import Optional, List
+
 # import torch
 
 load_dotenv()
@@ -51,8 +53,9 @@ class Message(BaseModel):
     content: str
 
 class ChatRequest(BaseModel):
-    history: list[Message]
     message: str
+    dataset: Optional[str] = None   # selected agent (DS-1, DS-2, TARS)
+    history: Optional[List[Message]] = None
 
 @app.get("/application_initialization")
 def application_initialization():
@@ -104,52 +107,44 @@ def get_user_intent(message: str) -> str:
 
     return data.get("dataset_choice", "NONE")
 
+
 @app.post("/chat", response_model=ChatResponse)
 def chat(req: ChatRequest):
-    user_input = req.message
+    user_input = req.message.strip()
+    dataset = req.dataset  # selected agent, can be None
+    last_selection = False  # remove getattr since frontend handles confirmation
+    history_messages = req.history or []
 
+    # Security: don't allow code snippets
     if contains_code(user_input):
-        return {
-            "response": "I'm sorry, I cannot process requests containing code snippets for security reasons."
-        }
+        return {"response": "I'm sorry, I cannot process requests containing code snippets for security reasons."}
 
-    choice = get_user_intent(user_input)
+    # Step 1: Handle agent selection
+   # Only return selection confirmation if dataset is set but first confirmation not yet sent
+    if user_input in ("DS-1", "DS-2", "TARS") and dataset == user_input:
+        return {"response": f"You have selected {dataset}. Please ask a question."}
 
-    try:
-        if choice == "DS-1":
-            response_text = ds1.chat_with_agent(user_input)
-            return {"response": response_text or "No response from DS-1 agent."}
 
-        elif choice == "DS-2":
-            response_text = ds2.chat_with_agent(user_input)
-            return {"response": response_text or "No response from DS-2 agent."}
+    # Step 2: Route actual question to the selected agent
+    if dataset == "DS-1":
+        response_text = ds1.chat_with_agent(user_input)
+        return {"response": response_text or "No response from DS-1 agent."}
 
-        else:
-            formatted_history = [
-                {
-                    "role": "user" if m.role == "user" else "model",
-                    "parts": [{"text": m.content}]
-                }
-                for m in req.history or []
-            ]
-            chat_session = gemini_client.chats.create(
-                model="gemini-2.0-flash",
-                history=formatted_history,
-                config={
-                    "system_instruction": (
-                        "Your name is TARS. You are a helpful AI assistant. "
-                        "Answer the user's questions based on the conversation history "
-                        "and provide accurate and concise responses."
-                    )
-                }
-            )
+    if dataset == "DS-2":
+        response_text = ds2.chat_with_agent(user_input)
+        return {"response": response_text or "No response from DS-2 agent."}
 
-            response = chat_session.send_message(user_input)
-            return {"response": response.text}
+    # Step 3: TARS / general chat
+    formatted_history = [
+        {"role": "user" if m.role == "user" else "model", "parts": [{"text": m.content}]}
+        for m in history_messages
+    ]
 
-    except Exception as e:
-        print(f"Error in chat: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail="Internal server error while processing chat"
-        )
+    chat_session = gemini_client.chats.create(
+        model="gemini-2.0-flash",
+        history=formatted_history,
+        config={"system_instruction": "Your name is TARS. You are a helpful AI assistant."}
+    )
+
+    response = chat_session.send_message(user_input)
+    return {"response": response.text}
