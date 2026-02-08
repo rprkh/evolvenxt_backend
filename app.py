@@ -111,21 +111,17 @@ def get_user_intent(message: str) -> str:
 @app.post("/chat", response_model=ChatResponse)
 def chat(req: ChatRequest):
     user_input = req.message.strip()
-    dataset = req.dataset  # selected agent, can be None
-    last_selection = False  # remove getattr since frontend handles confirmation
+    dataset = req.dataset
+    last_selection = False
     history_messages = req.history or []
 
-    # Security: don't allow code snippets
     if contains_code(user_input):
         return {"response": "I'm sorry, I cannot process requests containing code snippets for security reasons."}
 
-    # Step 1: Handle agent selection
-   # Only return selection confirmation if dataset is set but first confirmation not yet sent
     if user_input in ("DS-1", "DS-2", "TARS") and dataset == user_input:
         return {"response": f"You have selected {dataset}. Please ask a question."}
 
 
-    # Step 2: Route actual question to the selected agent
     if dataset == "DS-1":
         response_text = ds1.chat_with_agent(user_input)
         return {"response": response_text or "No response from DS-1 agent."}
@@ -134,7 +130,6 @@ def chat(req: ChatRequest):
         response_text = ds2.chat_with_agent(user_input)
         return {"response": response_text or "No response from DS-2 agent."}
 
-    # Step 3: TARS / general chat
     formatted_history = [
         {"role": "user" if m.role == "user" else "model", "parts": [{"text": m.content}]}
         for m in history_messages
