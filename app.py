@@ -8,7 +8,9 @@ from dataclasses import dataclass
 import json
 from pydantic import BaseModel
 import re
-from helpers import ds1, ds2
+from helpers.ds1 import chat_with_agent_ds1
+from helpers.ds2 import chat_with_agent_ds2
+from helpers.general_helpers import UserIntentDS2, get_intent_ds2, clean_sql
 from typing import Optional, List
 
 # import torch
@@ -45,8 +47,12 @@ supabase: Client = create_client(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_KEY)
 gemini_client = genai.Client(api_key=CONFIG.GEMINI_API_KEY)
 # client = InferenceClient(model=CONFIG.HF_MODEL_ID, token=os.getenv("HUGGING_FACE_API_KEY"))
 
+query_cache = {}
+
 class ChatResponse(BaseModel):
     response: str
+    show_buttons: Optional[bool] = False
+    buttons: Optional[List[str]] = None
 
 class Message(BaseModel):
     role: str
@@ -123,11 +129,41 @@ def chat(req: ChatRequest):
 
 
     if dataset == "DS-1":
-        response_text = ds1.chat_with_agent(user_input)
-        return {"response": response_text or "No response from DS-1 agent."}
+        response_text = chat_with_agent_ds1(user_input)
+        return {"response": response_text or "The DS-1 agent was unable to accurately process your request. Please try rephrasing your question."}
 
     if dataset == "DS-2":
-        response_text = ds2.chat_with_agent(user_input)
+        if user_input.lower() in ["consolidate", "upline manager"]:
+            original_query = query_cache.get("last_commission_query", "agent commissions")
+            
+            if user_input.lower() == "consolidate":
+                modified_query = f"{original_query} and {user_input.lower()} them"
+                response_text = chat_with_agent_ds2(modified_query)
+                query_cache.pop("last_commission_query", None)
+                return {"response": response_text or "No response from DS-2 agent."}
+            
+            elif user_input.lower() == "upline manager":
+                query_cache["waiting_for_manager"] = True
+                return {"response": "Please provide the name or ID of the upline manager."}
+        
+        if query_cache.get("waiting_for_manager"):
+            original_query = query_cache.get("last_commission_query", "agent commissions")
+            modified_query = f"{original_query} for upline manager {user_input}"
+            response_text = chat_with_agent_ds2(modified_query)
+            query_cache.pop("last_commission_query", None)
+            query_cache.pop("waiting_for_manager", None)
+            return {"response": response_text or "No response from DS-2 agent."}
+        
+        intent = get_intent_ds2(user_input)
+        if intent.sub_intent == "AGENT_COMMISSIONS":
+            query_cache["last_commission_query"] = user_input
+            return {
+                "response": "How would you like to view agent commissions?",
+                "show_buttons": True,
+                "buttons": ["Consolidate", "Upline Manager"]
+            }
+        
+        response_text = chat_with_agent_ds2(user_input)
         return {"response": response_text or "No response from DS-2 agent."}
 
     formatted_history = [

@@ -8,9 +8,9 @@ from dataclasses import dataclass
 import json
 from pydantic import BaseModel
 import re
-from helpers import ds1, ds2
 from typing import Literal
 import re
+from .general_helpers import get_intent, clean_sql
 
 load_dotenv()
 
@@ -24,34 +24,6 @@ class CONFIG:
 supabase: Client = create_client(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_KEY)
 gemini_client = genai.Client(api_key=CONFIG.GEMINI_API_KEY)
 
-def clean_sql(text: str) -> str:
-    text = re.sub(r"```sql\s*|```", "", text, flags=re.IGNORECASE)
-    text = re.sub(r";\s*$", "", text)
-
-    return text.strip()
-
-class UserIntent(BaseModel):
-    intent: Literal["QUERY_DATA", "GENERATE_CHART", "GENERAL_CHAT"]
-
-def get_intent(user_input):
-    prompt = f"""
-    Analyze the user request: "{user_input}"
-    
-    Categorize it:
-    - GENERATE_CHART: If they ask you to show, display, portray, create or generate a chart, plot, graph or visualization.
-    - QUERY_DATA: If they want a specific numbers, list, information or data.
-    - GENERAL_CHAT: Greeting or off-topic.
-    """
-    
-    response = gemini_client.models.generate_content(
-        model="gemini-2.0-flash",
-        contents=prompt,
-        config={
-            "response_mime_type": "application/json",
-            "response_schema": UserIntent,
-        }
-    )
-    return UserIntent.model_validate_json(response.text)
 
 def pivot_data(rows):
     if not rows:
@@ -103,7 +75,7 @@ For names only consider the first name. The validity in the orders columns can b
 Most of the questions regarding sales and bonuses can be answered by writing PostgreSQL queries for the salesperson_data table.
 """
 
-def chat_with_agent(user_input):
+def chat_with_agent_ds1(user_input):
     question = user_input
 
     intent_data = get_intent(question)     
