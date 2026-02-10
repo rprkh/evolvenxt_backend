@@ -110,7 +110,7 @@ def chat_with_agent_ds1(user_input):
 
             return final_response.text
         except:
-            return "TODO: I have to implement a RAG pipeline as a fallback option - Rahil"
+            return "Your request was unable to be processed. Please try again with a different prompt."
     elif intent_data.intent == "GENERATE_CHART":
         try:
             input_to_model = f"You are a PostgreSQL expert.\n\nSchema:{table_schema}\n\nRelationships:{relationships}\n\nImportant points to consider while generating PostgreSQL queries:{important_points}\n\nQuestion:{question}\n\nReturn only the PostgreSQL query. Do not include explanations."
@@ -141,15 +141,18 @@ def chat_with_agent_ds1(user_input):
                 "chart_type": "line"
             }
             return json.dumps(chart_payload)
-        except Exception as e:
-            print("Please rephrase your question to be more specific about the chart you want to generate")
+        except:
+            return "Please rephrase your question to be more specific about the chart you want to generate."
             
     else:
-        chat_session = gemini_client.chats.create(
-            model="gemini-2.0-flash",
-            config={"system_instruction": "Your name is DS-1. You are a PostgreSQL expert."}
-        )
-        general_chat_response = chat_session.send_message(user_input)
+        try:
+            chat_session = gemini_client.chats.create(
+                model="gemini-2.0-flash",
+                config={"system_instruction": "Your name is DS-1. You are a PostgreSQL expert."}
+            )
+            general_chat_response = chat_session.send_message(user_input)
 
-        return general_chat_response.text
+            return general_chat_response.text
+        except:
+            return "The model was unable to understand your request. Please try again with another prompt."
         
