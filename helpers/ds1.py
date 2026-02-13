@@ -34,11 +34,13 @@ def format_data_for_line_or_bar_chart(rows, chart_type="line"):
 
     time_columns = [
         'commission_quarter', 'commission_year', 'commission_month',
-        'commission_date', 'month', 'date', 'period', 'year', 'quarter', 'sales_year'
+        'commission_date', 'month', 'date', 'period', 'year', 'quarter', 'sales_year',
+        'bonus_year'
     ]
     name_columns = [
         'agent_name', 'upline_manager', 'agency_name',
-        'name', 'agent', 'manager', 'contractor', 'company'
+        'name', 'agent', 'manager', 'contractor', 'company',
+        'salesperson_name'
     ]
 
     time_key = next((c for c in time_columns if c in rows[0]), None)
