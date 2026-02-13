@@ -6,3 +6,5 @@ __pycache__/
 .vscode/
 .vercelignore
 *.pyc
+original_csv_files/
+synthetic_csv_file_text_to_sql/
