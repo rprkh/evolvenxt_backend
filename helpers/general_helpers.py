@@ -22,6 +22,7 @@ load_dotenv()
 
 class UserIntent(BaseModel):
     intent: Literal["QUERY_DATA", "GENERATE_CHART", "GENERAL_CHAT"]
+    chart_type: Optional[Literal["line", "bar", "pie"]] = None
 
 def get_intent(user_input):
     prompt = f"""
@@ -29,6 +30,12 @@ def get_intent(user_input):
     
     Categorize it:
     - GENERATE_CHART: If they ask you to show, display, portray, create or generate a chart, plot, graph or visualization.
+        Use this if the user asks to show, display, create, generate, visualize, or plot data.
+        This ALWAYS takes priority over QUERY_DATA.
+        Determine chart_type:
+        - "line": trends over time (months, years, dates)
+        - "bar": comparisons between categories or discrete time ranges
+        - "pie": proportions, percentages, distributions
     - QUERY_DATA: If they want a specific numbers, list, information or data.
     - GENERAL_CHAT: Greeting or off-topic.
     """
@@ -100,20 +107,20 @@ def get_intent_ds2(user_input: str) -> UserIntentDS2:
         KEYWORD RULE (HARD CONSTRAINT):
         If the request contains ANY of the following words:
         ["chart", "graph", "plot", "bar", "line", "pie", "visualize", "visualisation", "show as", "display as"]
-        → intent MUST be GENERATE_CHART.
+        -> intent MUST be GENERATE_CHART.
 
         Examples:
         - "show the commissions for Avery Rodriguez from Jan 2022 to Feb 2022 as a bar graph"
-        → intent: GENERATE_CHART, chart_type: "bar"
+        -> intent: GENERATE_CHART, chart_type: "bar"
 
         - "display agent commissions over time"
-        → intent: GENERATE_CHART, chart_type: "line"
+        -> intent: GENERATE_CHART, chart_type: "line"
 
         - "what were Avery Rodriguez's commissions in Jan 2022?"
-        → intent: QUERY_DATA, sub_category: AGENT_COMMISSIONS
+        -> intent: QUERY_DATA, sub_category: AGENT_COMMISSIONS
 
         - "hi there"
-        → intent: GENERAL_CHAT
+        -> intent: GENERAL_CHAT
 
         Return ONLY valid JSON that matches the UserIntentDS2 schema.
     """
@@ -127,4 +134,8 @@ def get_intent_ds2(user_input: str) -> UserIntentDS2:
         }
     )
     return UserIntentDS2.model_validate_json(response.text)
-    
+
+def contains_code(text):
+    code_patterns = [r"<script.*?>", r"import\s+.*", r"def\s+\w+\(.*\):", r"SELECT\s+.*\s+FROM"]
+
+    return any(re.search(pattern, text, re.IGNORECASE) for pattern in code_patterns)

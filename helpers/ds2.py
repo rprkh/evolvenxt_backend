@@ -45,89 +45,104 @@ The commission quarter column is in the form `Q{quarter}_{year}`, where quarter 
 Generate valid PostgreSQL queries based on the fact_commissions table schema. The PostgreSQL queries should be correct and executable without any errors.
 """
 
-def format_data_for_line_chart(rows):
+def format_data_for_line_or_bar_chart(rows):
     if not rows:
         return []
-    
-    time_columns = ['commission_quarter', 'commission_year', 'commission_month', 'commission_date', 'month', 'date', 'period', 'year', 'quarter']
-    time_key = None
-    
-    for col in time_columns:
-        if col in rows[0]:
-            time_key = col
-            break
-    
-    if not time_key:
-        return rows
-    
+
+    time_columns = [
+        'commission_quarter', 'commission_year', 'commission_month',
+        'commission_date', 'month', 'date', 'period', 'year', 'quarter',
+        'cumulative_commission', 'cumulative_commissions', 
+        'total_commission', 'total_commissions', 'commission_amount'
+    ]
+    name_columns = [
+        'agent_name', 'upline_manager', 'agency_name',
+        'name', 'agent', 'manager', 'contractor', 'company', 'agency_name'
+    ]
+    EXCLUDE_KEYS = {'id', 'agent_id', 'upline_id'}
+
+    time_key = next((c for c in time_columns if c in rows[0]), None)
+
     grouped = {}
-    name_columns = ['agent_name', 'upline_manager', 'agency_name', 'name', 'agent', 'manager', 'contractor', 'company']
-    
-    for row in rows:
-        period = str(row.get(time_key, ''))
-        
+
+    for idx, row in enumerate(rows):
+        period = str(row.get(time_key)) if time_key else f"row_{idx}"
+
         if period not in grouped:
             grouped[period] = {"period": period}
-        
-        name = None
-        for name_col in name_columns:
-            if name_col in row and row[name_col]:
-                name = row[name_col]
-                break
-        
+
+        name = next((row[col] for col in name_columns if col in row and row[col]), None)
+
         for key, value in row.items():
-            if key in [time_key] + name_columns + ['id', 'agent_id', 'upline_id']:
+            if key in EXCLUDE_KEYS or key == time_key:
                 continue
-            
             try:
                 numeric_value = float(value)
-                if name:
-                    grouped[period][f"{name}"] = numeric_value
-                else:
-                    grouped[period][key] = numeric_value
             except (ValueError, TypeError):
                 continue
-    
-    return sorted(grouped.values(), key=lambda x: x["period"])
+
+            if name:
+                grouped[period][name] = numeric_value
+            else:
+                grouped[period][key] = numeric_value
+
+        # include all key-value pairs
+        if len(grouped[period]) == 1:
+            for key, value in row.items():
+                if key in EXCLUDE_KEYS:
+                    continue
+                try:
+                    grouped[period][key] = float(value)
+                except (ValueError, TypeError):
+                    grouped[period][key] = str(value)
+
+    try:
+        return sorted(grouped.values(), key=lambda x: x["period"])
+    except Exception:
+        return list(grouped.values())
 
 
 def format_data_for_pie_chart(rows):
     if not rows:
         return []
-    
-    name_columns = ['agent_name', 'upline_manager', 'agency_name']
-    value_columns = ['commission_amount', 'commission_year', 'commission_month', 'cumulative_commission', 'cumulative_commissions', 'total_commission', 'total_commissions']
-    
-    name_key = None
-    value_key = None
-    
-    for col in name_columns:
-        if col in rows[0]:
-            name_key = col
-            break
-    
-    for col in value_columns:
-        if col in rows[0]:
-            value_key = col
-            break
-    
+
+    name_columns = ['agent_name', 'upline_manager', 'agency_name', 'name', 'salesperson', 'year']
+    value_columns = [
+        'commission_amount', 'commission_year', 'commission_month',
+        'cumulative_commission', 'cumulative_commissions',
+        'total_commission', 'total_commissions', 'bonus', 'amount', 'total_sales'
+    ]
+
+    name_key = next((col for col in name_columns if col in rows[0]), None)
+    value_key = next((col for col in value_columns if col in rows[0]), None)
+
     if not name_key or not value_key:
         for key, value in rows[0].items():
-            if isinstance(value, str) and not name_key and key not in ['id', 'agent_id', 'upline_id', 'commission_date', 'commission_quarter']:
+            if not name_key and isinstance(value, str) and key not in ['id', 'agent_id', 'upline_id', 'commission_date', 'commission_quarter']:
                 name_key = key
-            elif isinstance(value, (int, float)) and not value_key:
+            elif not value_key and isinstance(value, (int, float)):
                 value_key = key
-    
+
     result = []
     for row in rows:
         try:
+            if not name_key or not value_key:
+                for key, value in row.items():
+                    if key in ['id', 'agent_id', 'upline_id']:
+                        continue
+                    result.append({
+                        "name": str(key),
+                        "value": float(value) if isinstance(value, (int, float)) else 0
+                    })
+                continue
+
             result.append({
                 "name": str(row.get(name_key, 'Unknown')),
-                "value": float(row.get(value_key, 0))
+                "value": float(row.get(value_key, 0) or 0)
             })
         except (ValueError, TypeError):
             continue
-    
+
     return result
 
 def chat_with_agent_ds2(user_input: str):
@@ -214,12 +229,15 @@ def chat_with_agent_ds2(user_input: str):
             if chart_type == "pie":
                 formatted_chart_data = format_data_for_pie_chart(supabase_response.data)
             else:
-                formatted_chart_data = format_data_for_line_chart(supabase_response.data)
+                formatted_chart_data = format_data_for_line_or_bar_chart(supabase_response.data)
             
             print(f"Formatted chart data: {formatted_chart_data}")
 
-            if (supabase_response.data is None):
-                return "The model was unable to generate a chart based on your request. Please try rephrasing your prompt."
+            if supabase_response.data == None:
+                return "The model was unable to generate a chart for this request from the database. Please try again."
+
+            if not formatted_chart_data:
+                return "The model was unable to generate a chart for this request. Please try again."
 
             chart_payload = {
                 "type": "chart",

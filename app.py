@@ -10,7 +10,7 @@ from pydantic import BaseModel
 import re
 from helpers.ds1 import chat_with_agent_ds1
 from helpers.ds2 import chat_with_agent_ds2
-from helpers.general_helpers import UserIntentDS2, get_intent_ds2, clean_sql
+from helpers.general_helpers import UserIntentDS2, get_intent_ds2, clean_sql, contains_code
 from typing import Optional, List
 
 # import torch
@@ -81,10 +81,7 @@ def health():
         "platform": "vercel"
     }
 
-def contains_code(text):
-    code_patterns = [r"<script.*?>", r"import\s+.*", r"def\s+\w+\(.*\):", r"SELECT\s+.*\s+FROM"]
 
-    return any(re.search(pattern, text, re.IGNORECASE) for pattern in code_patterns)
 
 class Intent(BaseModel):
     dataset_choice: str  # Options: "DS-1", "DS-2", or "NONE"
@@ -166,16 +163,30 @@ def chat(req: ChatRequest):
         response_text = chat_with_agent_ds2(user_input)
         return {"response": response_text or "No response from DS-2 agent."}
 
-    formatted_history = [
-        {"role": "user" if m.role == "user" else "model", "parts": [{"text": m.content}]}
-        for m in history_messages
-    ]
+    if dataset not in ["DS-1", "DS-2"]:
 
-    chat_session = gemini_client.chats.create(
-        model="gemini-2.0-flash",
-        history=formatted_history,
-        config={"system_instruction": "Your name is TARS. You are a helpful AI assistant."}
-    )
+        formatted_history = [
+            {"role": "user" if m.role == "user" else "model", "parts": [{"text": m.content}]}
+            for m in history_messages
+        ]
 
-    response = chat_session.send_message(user_input)
-    return {"response": response.text}
+        print(f"User chat history with TARS: {formatted_history}")
+
+        system_instruction = """
+            Your name is TARS. You are a helpful AI assistant for general questions.
+            - You can answer general queries about any topic.
+            - For questions related to sales, commissions, bonuses, age, ID, tiers, orders, validity, or other dataset-specific queries, instruct the user to use the dropdown and select the appropriate dataset agent (DS-1 or DS-2).
+        """
+
+        try:
+            chat_session = gemini_client.chats.create(
+                model="gemini-2.0-flash",
+                history=formatted_history,
+                config={"system_instruction": system_instruction}
+            )
+
+            response = chat_session.send_message(user_input)
+            return {"response": response.text}
+        except:
+            return {"response": "TARS was unable to understand your question. Please try again with another prompt or selec a specific agent from the dropdown to get information related to the datasets"}
+        
